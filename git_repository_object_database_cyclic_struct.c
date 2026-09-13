@@ -55,5 +55,6 @@ int main(void) {
     }else {
         printf("Nope ur a looser :/\n");
     }
+    free(pr);
     return 0;
 }

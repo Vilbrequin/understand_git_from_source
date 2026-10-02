@@ -4,34 +4,14 @@
  ***********************************************************************************************/
 
 #include <stdio.h>
-#include "git-utils.h"
-#include <strings.h>
 #include <string.h>
-#include <inttypes.h>
-#include <stdlib.h>
+#include <stdlib.h> // for calloc
 
-int git_parse_unsigned(const char *value, uintmax_t *ret, uintmax_t max);
-
-unsigned long git_env_ulong(const char *env);
-
-static int get_unit_factor(const char* factor);
+#include "git-utils.h"
+#include "git-parsers.h"
+#include "git-wrappers.h"
 
 static int memory_limit_check(size_t size, int gentle);
-
-void *xcalloc(size_t nmemb, size_t size);
-
-int main(char agrc, char **argv){
-
-	char *arr = xcalloc(1025, sizeof(char));
-	if(!arr){
-		printf("Cant allocate memory\n");
-	}
-	else {
-		printf("All good chef\n");
-	}
-	free(arr);
-	return 0;
-}
 
 void *xcalloc(size_t nmemb, size_t size){
 	
@@ -40,6 +20,7 @@ void *xcalloc(size_t nmemb, size_t size){
 	// first check if "nmemb * size" will overflows
 	if(unsigend_mult_overflows(nmemb, size)){
 		//die function to do later
+		printf("xcalloc : Multiplication overflow.\n");
 		exit(1);
 	}
 
@@ -68,97 +49,17 @@ void *xcalloc(size_t nmemb, size_t size){
 	if(!ret) {
 		// if we still got NULL then no memory space available
 		// we should exit, TODO implement die
+		printf("xcalloc : No Memory Space available.\n");
 		exit(1);
 	}
 	return ret;
 }
 
-static int get_unit_factor(const char* factor) {
-	if(!*factor){
-		return 1;
-	}
-	// we will use the glibc api strcasecmp, that compars two strings byte-by-byte
-	// with case ignored, and returns 0 in case of match
-	else if (!strcasecmp(factor, "k")){
-		return 1024;
-	}
-	
-	else if (!strcasecmp(factor, "m")){
-		return 1024 * 1024;
-	}
-	
-	else if (!strcasecmp(factor, "g")){
-		return 1024 * 1024 *1024;
-	}
-	
-	return 0;
-}
 
-
-int git_parse_unsigned(const char *value, uintmax_t *ret, uintmax_t max){
-
-	/* This API is used to parse the value that we set in an env var 
-	 * that limits out the amount of allocated memory that we can use
-	 * and retrun tha amount in bytes*/
-
-	if(value && *value){
-		// if value set in the env var is negativ we return 0 and 
-		// skip the memory limit 
-		uintmax_t val;
-		char *end;
-		int factor;
-		
-		if(strchr(value, '-')) {
-			return 0;
-		}
-		// the input that we git expect from the user is in the following form 
-		// 100m, or 20k or 15g or 200, where the digit value is the amount we
-		// want to limit allocation to multiply by factor (nothing, k for kill
-		// m for mega and g for gega),for that the strtoumax glibc is used, that 
-		// converts the initial part of a string value to unsigned long int according 
-		// to the base choosed (0 = decimal base), the conversion stopped at the first 
-		// character wich is non valid digit in given base.
-		//
-		// e.g. in base 10  if value = 1500k => end = "k" and strtoumax returns (ul)1500
-		val = strtoumax(value, &end, 0);
-		
-		// check if value has no digits 
-		if(end == value){
-			return 0;
-		}
-
-		factor = get_unit_factor(end);
-		if(!factor){
-			return 0;
-		}
-		// Check if the value that we set is not greater than a max threshold
-		// or the result in bytes of factor and value will overflow 
-		if (unsigend_mult_overflows(factor, val) || factor*val > max){
-			return 0;
-		}
-		val *= factor;
-		*ret = val;
-		return 1;
-	}
-	return 0;
-}
-
-
-unsigned long git_env_ulong(const char *env){
-
-	char *var = getenv(env);
-	uintmax_t ret = 0;
-	
-	if(var && !git_parse_unsigned(var, &ret, maximum_unsigned_value_of_type(unsigned long))){
-		// TODO exit the current process and return to parent process 
-		exit(1);
-	}
-	return ret;
-}
 
 static int memory_limit_check(size_t size, int gentle){
 	size_t limit = 0;
-	limit = git_env_ulong("GIT_ALLOC_LIMIT");
+	limit = git_env_ulong("GIT_ALLOC_LIMIT", 0);
 	if (!limit){
 		limit = SIZE_MAX;
 	}
@@ -169,6 +70,7 @@ static int memory_limit_check(size_t size, int gentle){
 			return -1;
 		}
 		else {
+			printf("memory_limit_check : The requested memory bigger that what is allowed.\n");
 			exit(1);
 		}
 	}
